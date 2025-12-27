@@ -1,0 +1,8 @@
+name: HW - Hello World
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
