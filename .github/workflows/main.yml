@@ -1,37 +1,43 @@
-name: Deploy Simple Java App
+name: Deploy with Docker
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Compile Java
-        run: |
-          mkdir -p target
-          javac -d target src/main/java/org/example/Main.java
-          # Создаём JAR
-          cd target
-          jar cfe app.jar org.example.Main org/example/Main.class
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
 
-      - name: Deploy to server
+      - name: Build with Maven
+        run: mvn clean package
+
+      - name: Build Docker image
+        run: docker build -t java-app .
+
+      - name: Deploy to Server
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /opt/java-app
-            # Установка Java (версия по умолчанию)
-            sudo apt update
-            sudo apt install -y default-jdk
+            # Останавливаем старый контейнер
+            docker stop java-app-container || true
+            docker rm java-app-container || true
             
-            # Запуск приложения
-            java -jar app.jar &
-            echo "Application started!"
+            # Запускаем новый
+            docker run -d \
+              --name java-app-container \
+              -p 8080:8080 \
+              --restart always \
+              java-app
