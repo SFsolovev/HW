@@ -1,4 +1,4 @@
-name: Deploy Java App
+name: Deploy Java App2
 
 on:
   push:
