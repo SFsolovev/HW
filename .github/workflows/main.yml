@@ -1,3 +1,11 @@
+- name: Setup SSH
+  run: |
+    mkdir -p ~/.ssh
+    echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+    chmod 600 ~/.ssh/id_rsa
+    ssh-keyscan -H "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
+
+
 name: Deploy Java App
 
 on:
@@ -26,26 +34,3 @@ jobs:
             --exclude='.github' \
             ./ \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/java-app/
-
-      - name: Build and run on server
-        run: |
-          ssh -p ${{ secrets.SSH_PORT || 22 }} \
-            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
-            cd /opt/java-app
-          
-            # Останавливаем старое приложение
-            pkill -f 'java.*Main' || true
-          
-            # Устанавливаем Java если нет
-            if ! command -v java &> /dev/null; then
-              sudo apt update
-              sudo apt install -y openjdk-21-jdk
-            fi
-          
-            # Собираем и запускаем
-            mvn clean package -DskipTests
-            nohup java -jar target/*.jar > app.log 2>&1 &
-            echo \$! > app.pid
-          
-            echo 'Application started! Check port 8080'
-          "
