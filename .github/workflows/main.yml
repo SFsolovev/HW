@@ -21,6 +21,18 @@ jobs:
       - name: Build JAR
         run: mvn clean package
 
+      - name: Test SSH connection
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            echo "Connected to $(hostname)"
+            java -version
+            echo "Current directory: $(pwd)"
+
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.0
         with:
