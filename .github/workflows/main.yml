@@ -5,57 +5,47 @@ on:
     branches: [ main ]
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Build with Maven
-        run: mvn clean package
-
-      - name: Build Docker image
+      - name: Setup SSH
         run: |
-          docker build -t java-app .
-          docker save java-app -o java-app.tar
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Copy files to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          source: "java-app.tar"
-          target: "/tmp/"
+      - name: Copy source code to server
+        run: |
+          rsync -avz -e "ssh -p ${{ secrets.SSH_PORT || 22 }}" \
+            --exclude='.git' \
+            --exclude='.github' \
+            ./ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/java-app/
 
-      - name: Deploy on server
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          script: |
-            # Установка Docker если нет
-            if ! command -v docker &> /dev/null; then
-              echo "Installing Docker..."
+      - name: Build and run on server
+        run: |
+          ssh -p ${{ secrets.SSH_PORT || 22 }} \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
+            cd /opt/java-app
+          
+            # Останавливаем старое приложение
+            pkill -f 'java.*Main' || true
+          
+            # Устанавливаем Java если нет
+            if ! command -v java &> /dev/null; then
               sudo apt update
-              sudo apt install -y docker.io
-              sudo systemctl start docker
-              sudo systemctl enable docker
+              sudo apt install -y openjdk-21-jdk
             fi
-            
-            # Загрузка и запуск образа
-            docker load -i /tmp/java-app.tar
-            docker stop java-app || true
-            docker rm java-app || true
-            docker run -d --name java-app -p 8080:8080 --restart always java-app
-            echo "Application deployed!"
+          
+            # Собираем и запускаем
+            mvn clean package -DskipTests
+            nohup java -jar target/*.jar > app.log 2>&1 &
+            echo \$! > app.pid
+          
+            echo 'Application started! Check port 8080'
+          "
